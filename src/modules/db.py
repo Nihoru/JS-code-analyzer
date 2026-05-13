@@ -8,7 +8,7 @@ class DB_handler:
         
         """Класс для работы с БД. Инициализируется с настройками для входа в БД."""
         
-        if not DB_handler.__is_postgresql_installed:
+        if not DB_handler.__is_postgresql_installed():
                 print("Критическая ошибка: PostgreSQL не обнаружен в системе.")
                 print("Пожалуйста, установите PostgreSQL (https://www.postgresql.org/download/).")
                 sys.exit()
@@ -110,7 +110,11 @@ class DB_handler:
         except (Exception, psycopg2.OperationalError) as e:
             print(f"Ошибка подключения: Проверьте, запущен ли сервер PostgreSQL и верен ли пароль.\n{e}")
             choice = input("Повторить попытку? (y/n): ")
-            if choice != "y":
+            if choice == "y":
+                db_config['password'] = input("Введите новый пароль: ")
+                db_config['port'] = input("Введите новый порт: ")
+                return None
+            else:
                 sys.exit()
 
     def get_all(self):
@@ -134,6 +138,3 @@ class DB_handler:
         """
         cur.execute(select_where_query)
         return cur.fetchall()
-
-db = DB_handler("passw", "1111")
-print(db.get_all())
