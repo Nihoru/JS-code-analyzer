@@ -1,13 +1,13 @@
 import re
 from typing import List, Tuple
 
-# Словарь угроз: название, уровень, критичность (1-5, где 5 - самый опасный)
+# Список правил для поиска уязвимостей в JS коде
 VULNERABILITY_RULES = [
     {
         "name": "eval() function usage",
         "pattern": r"\beval\s*\(",
-        "level": "BLOCKER",
-        "level_num": 5,
+        "level": "BLOCKER",  # Уровень опасности (текст)
+        "level_num": 5,      # Уровень опасности (число 1-5)
         "description": "eval() executes arbitrary code and is a major security risk"
     },
     {
@@ -62,25 +62,46 @@ VULNERABILITY_RULES = [
 ]
 
 def get_js_code_from_file(file_path: str) -> str:
-    """Читает JS код из файла"""
+    """
+    Читает JavaScript код из указанного файла.
+    """
     with open(file_path, 'r', encoding='utf-8') as f:
         return f.read()
 
+def is_meaningful_line(line: str) -> bool:
+    """
+    Проверяет, является ли строка содержательной.
+    Исключает пустые строки, строки только с пунктуацией и служебные комментарии.
+    """
+    stripped = line.strip()
+    if not stripped:
+        return False
+    
+    # Регулярное выражение для проверки строк, состоящих только из спецсимволов
+    if re.fullmatch(r"^[{}()\[\],;]+$", stripped):
+        return False
+        
+    # Исключение разделителей, добавляемых парсером
+    if stripped.startswith("/* ===") and stripped.endswith("=== */"):
+        return False
+        
+    return True
+
 def analyze_code_js(site_url: str, js_file_path: str) -> Tuple[str, int, int, int, int, int, int, str]:
     """
-    Первая функция: возвращает агрегированную статистику по уязвимостям.
+    Выполняет анализ JS кода и возвращает агрегированную статистику.
     
-    Возвращает кортеж:
-    (Ссылка, кол-во чистых строк, угроз 1 уровня, 2, 3, 4, 5, рекомендации)
+    Результат: (URL, чистые строки, L1, L2, L3, L4, L5, заглушка для рекомендаций)
     """
-    # Читаем код
-    js_code = get_js_code_from_file(js_file_path)
-    lines = js_code.splitlines()
-    total_lines = len(lines)
+    js_code = get_js_code_from_file(js_file_path)  # Весь считанный код
+    lines = js_code.splitlines()                    # Разделение на строки
     
-    # Считаем уязвимости по уровням
-    level_counts = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
-    lines_with_vulns = set()
+    # Поиск индексов всех содержательных строк
+    meaningful_lines_indices = [i for i, line in enumerate(lines) if is_meaningful_line(line)]
+    total_meaningful_lines = len(meaningful_lines_indices)  # Всего содержательных строк
+    
+    level_counts = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}  # Счетчик уязвимостей по уровням
+    lines_with_vulns = set()                        # Множество строк с уязвимостями
     
     for rule in VULNERABILITY_RULES:
         pattern = re.compile(rule["pattern"], re.IGNORECASE)
@@ -91,14 +112,15 @@ def analyze_code_js(site_url: str, js_file_path: str) -> Tuple[str, int, int, in
                 lines_with_vulns.add(i)
                 level_counts[level_num] += 1
     
-    clean_lines = total_lines - len(lines_with_vulns)
+    # Расчет количества строк без уязвимостей
+    vulns_in_meaningful = [idx for idx in lines_with_vulns if is_meaningful_line(lines[idx])]
+    clean_lines = total_meaningful_lines - len(vulns_in_meaningful)
     
-    # Рекомендации оставляем пустыми
-    recommendations = ""
+    recommendations = ""  # Рекомендации заполняются позже через LLM
     
     return (
         site_url,
-        clean_lines,
+        max(0, clean_lines),
         level_counts[1],  # INFO
         level_counts[2],  # MINOR
         level_counts[3],  # MAJOR
@@ -109,10 +131,8 @@ def analyze_code_js(site_url: str, js_file_path: str) -> Tuple[str, int, int, in
 
 def get_vulnerabilities_detailed(site_url: str, js_file_path: str) -> List[str]:
     """
-    Вторая функция: возвращает массив строк с деталями каждой уязвимости.
-    
-    Каждая строка имеет формат:
-    "Уязвимость: {name} | Уровень: {level} | Строки: {номера_строк}"
+    Возвращает детальный отчет по каждой найденной уязвимости.
+    Формат каждой строки: "Уязвимость: {name} | Уровень: {level} | Строки: {номера_строк}"
     """
     js_code = get_js_code_from_file(js_file_path)
     lines = js_code.splitlines()
@@ -122,14 +142,13 @@ def get_vulnerabilities_detailed(site_url: str, js_file_path: str) -> List[str]:
         pattern = re.compile(rule["pattern"], re.IGNORECASE)
         vulnerable_lines = []
         
-        for i, line in enumerate(lines, start=1):  # Нумерация строк с 1
+        for i, line in enumerate(lines, start=1):
             if pattern.search(line):
-                # Сохраняем номер строки и саму строку (обрезаем длинные)
-                line_preview = line.strip()[:100]
+                line_preview = line.strip()[:100]  # Предпросмотр строки (до 100 симв.)
                 vulnerable_lines.append(f"строка {i}: {line_preview}")
         
         if vulnerable_lines:
-            # Формируем строку с деталями
+            # Сборка строки описания (не более 3 примеров строк)
             vuln_str = f"Уязвимость: {rule['name']} | Уровень: {rule['level']} | {', '.join(vulnerable_lines[:3])}"
             if len(vulnerable_lines) > 3:
                 vuln_str += f" (+ еще {len(vulnerable_lines) - 3})"

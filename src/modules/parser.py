@@ -6,17 +6,15 @@ from urllib.parse import urljoin
 
 def save_all_js_from_url(url, output_filename="src/output/js_code.txt", separator="\n\n"):
     """
-    Скачивает как встроенный JS-код, так и код из внешних файлов (.js),
+    Скачивает встроенный JS-код и код из внешних файлов (.js),
     подключенных на странице, и сохраняет всё в один файл.
-    Каждый запрос перезаписывает файл.
+    Каждый вызов перезаписывает файл.
     """
     
-    # Создаем директорию, если она не существует
+    # Создание директории для вывода
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
-    # Открываем файл на запись ('w') в самом начале.
-    # Это гарантирует, что файл будет перезаписан (очищен) при каждом новом запросе,
-    # даже если в процессе скачивания произойдет ошибка.
+    # Открытие файла на запись (очистка при каждом новом запросе)
     with open(output_filename, 'w', encoding='utf-8') as file:
         try:
             headers = {
@@ -28,23 +26,25 @@ def save_all_js_from_url(url, output_filename="src/output/js_code.txt", separato
             response.raise_for_status()
 
             soup = BeautifulSoup(response.text, 'html.parser')
-            script_tags = soup.find_all('script')
+            script_tags = soup.find_all('script')  # Поиск всех тегов <script>
             
-            js_found = False
-            # Настройки для beautifier
+            js_found = False  # Флаг наличия найденного JS
+            
+            # Конфигурация форматировщика (beautifier)
             opts = jsbeautifier.default_options()
             opts.indent_size = 2
 
             for idx, script in enumerate(script_tags, start=1):
                 script_type = script.get('type', '').lower()
                 
-                # Пропускаем JSON и шаблоны
+                # Игнорирование неисполняемых скриптов (JSON, шаблоны)
                 if 'json' in script_type or 'template' in script_type:
                     continue
 
                 src = script.get('src')
                 
                 if src:
+                    # Обработка внешнего скрипта
                     absolute_url = urljoin(url, src)
                     print(f"Скачивание внешнего скрипта [{idx}]: {absolute_url}")
                     try:
@@ -56,10 +56,10 @@ def save_all_js_from_url(url, output_filename="src/output/js_code.txt", separato
                             if js_found:
                                 file.write(separator)
                             
-                            # Форматирование перед записью
+                            # Попытка форматирования кода
                             try:
                                 formatted_js = jsbeautifier.beautify(js_content, opts)
-                            except:
+                            except Exception:
                                 formatted_js = js_content
                             
                             file.write(f"/* === ВНЕШНИЙ СКРИПТ {idx}: {absolute_url} === */\n")
@@ -70,14 +70,14 @@ def save_all_js_from_url(url, output_filename="src/output/js_code.txt", separato
                         print(f"  [!] Ошибка при скачивании {absolute_url}: {e}")
             
                 else:
+                    # Обработка встроенного (inline) кода
                     if script.string:
                         if js_found:
                             file.write(separator)
                         
-                        # Форматирование встроенного кода
                         try:
                             formatted_js = jsbeautifier.beautify(script.string.strip(), opts)
-                        except:
+                        except Exception:
                             formatted_js = script.string.strip()
                         
                         file.write(f"/* === ВСТРОЕННЫЙ СКРИПТ {idx} === */\n")
@@ -90,6 +90,6 @@ def save_all_js_from_url(url, output_filename="src/output/js_code.txt", separato
                 print("\nJavaScript код не найден.")
 
         except requests.exceptions.RequestException as e:
-            print(f"Ошибка при подключении к главному сайту: {e}")
+            print(f"Ошибка при подключении к сайту: {e}")
         except Exception as e:
             print(f"Произошла непредвиденная ошибка: {e}")

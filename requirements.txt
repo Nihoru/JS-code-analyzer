@@ -4,3 +4,4 @@ psycopg2==2.9.12
 Requests==2.34.0
 jsbeautifier==1.15.1
 python-dotenv==1.0.1
+rich==13.9.4
