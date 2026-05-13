@@ -101,7 +101,7 @@ class DB_handler:
                 l3rows INTEGER,
                 l4rows INTEGER,
                 l5rows INTEGER,
-                recommendations VARCHAR(200)
+                recommendations VARCHAR(10000)
             );
             """
             cur.execute(create_table_query)
