@@ -39,7 +39,8 @@ check_system_dependencies() {
     fi
 
     if ! command -v psql &> /dev/null; then
-        whiptail --title "Внимание" --msgbox "PostgreSQL не найден. Сохранение и просмотр истории будут недоступны." 8 45
+        whiptail --title "Ошибка" --msgbox "PostgreSQL не найден. Установите его для работы с БД." 8 45
+        exit 1
     fi
 }
 
@@ -174,12 +175,6 @@ analyze_url() {
 
 view_db() {
     ensure_sudo_for_db
-
-    # Проверка доступности БД
-    if ! $PYTHON_CMD src/main.py check-db --db-pass "$DB_PASS" --db-port "$DB_PORT" &> /dev/null; then
-        whiptail --title "Ошибка БД" --msgbox "База данных недоступна. Просмотр истории невозможен." 8 60
-        return
-    fi
 
     mkdir -p src/output
     TEMP_DB="src/output/db_view.tmp"
