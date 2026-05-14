@@ -13,7 +13,9 @@ class DB_handler:
         Инициализирует обработчик БД. Проверяет наличие PostgreSQL и устанавливает соединение.
         """
         if not DB_handler.__is_postgresql_installed():
-            raise Exception("Критическая ошибка: PostgreSQL не обнаружен в системе. Пожалуйста, установите PostgreSQL.")
+                print("Критическая ошибка: PostgreSQL не обнаружен в системе.")
+                print("Пожалуйста, установите PostgreSQL (https://www.postgresql.org/download/).")
+                sys.exit()
 
         self.config = {
             "dbname": "JS_Code_Analyzer",  # Имя целевой базы данных
@@ -57,7 +59,8 @@ class DB_handler:
             cur.execute(insert_query, data_tuple)
             self.connection.commit()
         except Exception as e:
-            raise Exception(f"Возникла ошибка внутри программы при вставке данных:\n{e}")
+            print(f"Возникла ошибка внутри программы при вставке данных:\n{e}")
+            sys.exit()
 
     @staticmethod
     def __setup_database(db_config):
