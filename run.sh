@@ -66,9 +66,9 @@ setup_venv() {
     # Обновление pip и установка зависимостей
     {
         echo "50"
-        python -m pip install -q --no-cache-dir --upgrade pip
+        python -m pip install -q --upgrade pip
         echo "70"
-        python -m pip install -q --no-cache-dir -r requirements.txt
+        python -m pip install -q -r requirements.txt
         echo "100"
     } | whiptail --title "Настройка" --gauge "Установка зависимостей Python..." 8 50 50
 }
