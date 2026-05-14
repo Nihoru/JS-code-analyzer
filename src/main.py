@@ -145,7 +145,6 @@ def analyze_scenario(url, db_pass, db_port, api_key=None, width=None, show_logs=
     from modules.parser import save_all_js_from_url
     from modules.analyzer import analyze_code_js, get_vulnerabilities_detailed
     from modules.advisor import LlmVulnerabilityRecommender
-    from modules.db import DB_handler
     from modules.calculator import calculate_infection_rate
     from rich.console import Console
     from rich.panel import Panel
@@ -156,8 +155,9 @@ def analyze_scenario(url, db_pass, db_port, api_key=None, width=None, show_logs=
     js_file = "src/output/js_code.txt"  # Путь к временному файлу с кодом
     
     with OutputCapture() as capture:
-        report_progress(5, "Проверка базы данных...")
-        manage_postgres_service("start")
+        if not skip_db:
+            report_progress(5, "Проверка базы данных...")
+            manage_postgres_service("start")
         try:
             report_progress(15, f"Сбор JS кода с {url}...")
             log_status(f"Начинаю сбор JS кода с {url}...")
@@ -196,6 +196,7 @@ def analyze_scenario(url, db_pass, db_port, api_key=None, width=None, show_logs=
                 
                 if not skip_db:
                     try:
+                        from modules.db import DB_handler
                         report_progress(90, "Сохранение результатов в БД...")
                         handler = DB_handler(db_pass, db_port)
                         handler.insert(tuple(full_data))
