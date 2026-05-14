@@ -40,6 +40,9 @@ check_system_dependencies() {
 
     if ! command -v psql &> /dev/null; then
         whiptail --title "Внимание" --msgbox "PostgreSQL не найден. Сохранение и просмотр истории будут недоступны." 8 45
+        export HAS_PSQL=0
+    else
+        export HAS_PSQL=1
     fi
 }
 
@@ -84,27 +87,33 @@ setup_db_config() {
         CURRENT_KEY=$(grep '^GEMINI_API_KEY=' .env | cut -d'"' -f2)
     fi
 
-    # Значения по умолчанию
-    DB_PASS="${CURRENT_PASS:-postgres}"
-    DB_PORT="${CURRENT_PORT:-5432}"
-    GEMINI_API_KEY="${CURRENT_KEY:-}"
-
-    # Интерактивный ввод настроек
     local INPUT
     
-    INPUT=$(whiptail --title "Конфигурация" --inputbox "Пароль PostgreSQL:" 8 45 "$DB_PASS" 3>&1 1>&2 2>&3)
-    [ $? -eq 0 ] && DB_PASS="$INPUT"
+    # Запрашиваем настройки БД только если она установлена в системе
+    if [ "$HAS_PSQL" = "1" ]; then
+        DB_PASS="${CURRENT_PASS:-postgres}"
+        DB_PORT="${CURRENT_PORT:-5432}"
 
-    INPUT=$(whiptail --title "Конфигурация" --inputbox "Порт PostgreSQL:" 8 45 "$DB_PORT" 3>&1 1>&2 2>&3)
-    [ $? -eq 0 ] && DB_PORT="$INPUT"
+        INPUT=$(whiptail --title "Конфигурация" --inputbox "Пароль PostgreSQL:" 8 45 "$DB_PASS" 3>&1 1>&2 2>&3)
+        [ $? -eq 0 ] && DB_PASS="$INPUT"
 
+        INPUT=$(whiptail --title "Конфигурация" --inputbox "Порт PostgreSQL:" 8 45 "$DB_PORT" 3>&1 1>&2 2>&3)
+        [ $? -eq 0 ] && DB_PORT="$INPUT"
+    else
+        DB_PASS=""
+        DB_PORT=""
+    fi
+
+    GEMINI_API_KEY="${CURRENT_KEY:-}"
     INPUT=$(whiptail --title "Конфигурация" --inputbox "API ключ Gemini (опционально):" 8 45 "$GEMINI_API_KEY" 3>&1 1>&2 2>&3)
     [ $? -eq 0 ] && GEMINI_API_KEY="$INPUT"
 
     # Сохранение настроек в .env файл
-    echo "DB_PASS=\"$DB_PASS\"" > .env
-    echo "DB_PORT=\"$DB_PORT\"" >> .env
+    > .env
+    [ -n "$DB_PASS" ] && echo "DB_PASS=\"$DB_PASS\"" >> .env
+    [ -n "$DB_PORT" ] && echo "DB_PORT=\"$DB_PORT\"" >> .env
     [ -n "$GEMINI_API_KEY" ] && echo "GEMINI_API_KEY=\"$GEMINI_API_KEY\"" >> .env
+    [ -n "$SHOW_LOGS" ] && echo "SHOW_LOGS=\"$SHOW_LOGS\"" >> .env
     
     export DB_PASS DB_PORT GEMINI_API_KEY
 }
@@ -127,16 +136,20 @@ analyze_url() {
     URL=$(whiptail --title "Анализ" --inputbox "Введите URL сайта:" 8 60 "https://" 3>&1 1>&2 2>&3)
     [ -z "$URL" ] && return
 
-    ensure_sudo_for_db
+    if [ "$HAS_PSQL" = "1" ]; then
+        ensure_sudo_for_db
 
-    # Проверка доступности БД
-    if ! $PYTHON_CMD src/main.py check-db --db-pass "$DB_PASS" --db-port "$DB_PORT" &> /dev/null; then
-        if whiptail --title "Ошибка БД" --yesno "База данных недоступна. Прервать процесс?" 10 60; then
-            return
+        # Проверка доступности БД
+        if ! $PYTHON_CMD src/main.py check-db --db-pass "$DB_PASS" --db-port "$DB_PORT" &> /dev/null; then
+            if whiptail --title "Ошибка БД" --yesno "База данных недоступна. Прервать процесс?" 10 60; then
+                return
+            fi
+            SKIP_DB_FLAG="--skip-db"
+        else
+            SKIP_DB_FLAG=""
         fi
-        SKIP_DB_FLAG="--skip-db"
     else
-        SKIP_DB_FLAG=""
+        SKIP_DB_FLAG="--skip-db"
     fi
 
     mkdir -p src/output
@@ -153,8 +166,8 @@ analyze_url() {
     # Запуск Python скрипта анализа
     (
         $PYTHON_CMD src/main.py analyze "$URL" \
-            --db-pass "$DB_PASS" \
-            --db-port "$DB_PORT" \
+            --db-pass "${DB_PASS:-none}" \
+            --db-port "${DB_PORT:-5432}" \
             --width "$TABLE_WIDTH" \
             ${GEMINI_API_KEY:+--api-key "$GEMINI_API_KEY"} \
             $LOG_FLAG \
@@ -173,6 +186,11 @@ analyze_url() {
 }
 
 view_db() {
+    if [ "$HAS_PSQL" = "0" ]; then
+        whiptail --title "Внимание" --msgbox "PostgreSQL не установлен. Просмотр истории невозможен." 8 60
+        return
+    fi
+
     ensure_sudo_for_db
 
     # Проверка доступности БД
@@ -215,7 +233,6 @@ view_db() {
 main_menu() {
     check_system_dependencies
     setup_venv
-    [ ! -f .env ] && setup_db_config
     
     # Загрузка переменных окружения из .env
     if [ -f .env ]; then
@@ -223,6 +240,13 @@ main_menu() {
         export DB_PORT=$(grep '^DB_PORT=' .env | cut -d'"' -f2)
         export GEMINI_API_KEY=$(grep '^GEMINI_API_KEY=' .env | cut -d'"' -f2)
         export SHOW_LOGS=$(grep '^SHOW_LOGS=' .env | cut -d'"' -f2)
+    fi
+    
+    # Если СУБД появилась, но настроек еще нет, запрашиваем их
+    if [ "$HAS_PSQL" = "1" ] && { [ -z "$DB_PASS" ] || [ -z "$DB_PORT" ]; }; then
+        setup_db_config
+    elif [ ! -f .env ]; then
+        setup_db_config
     fi
     
     # По умолчанию логи включены

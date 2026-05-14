@@ -1,7 +1,6 @@
 import psycopg2
 from psycopg2 import sql
 import subprocess
-import sys
 
 class DB_handler:
     """
