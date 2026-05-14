@@ -130,6 +130,16 @@ analyze_url() {
 
     ensure_sudo_for_db
 
+    # Проверка доступности БД
+    if ! $PYTHON_CMD src/main.py check-db --db-pass "$DB_PASS" --db-port "$DB_PORT" &> /dev/null; then
+        if whiptail --title "Ошибка БД" --yesno "База данных недоступна. Прервать процесс?" 10 60; then
+            return
+        fi
+        SKIP_DB_FLAG="--skip-db"
+    else
+        SKIP_DB_FLAG=""
+    fi
+
     mkdir -p src/output
     LOG_FILE="src/output/analysis.log"
     
@@ -149,6 +159,7 @@ analyze_url() {
             --width "$TABLE_WIDTH" \
             ${GEMINI_API_KEY:+--api-key "$GEMINI_API_KEY"} \
             $LOG_FLAG \
+            $SKIP_DB_FLAG \
             --progress 2>&1 1>&3 | whiptail --title "Анализ" --gauge "Запуск анализа для $URL..." 8 60 0
     ) 3>"$LOG_FILE"
     

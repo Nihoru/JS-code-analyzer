@@ -137,7 +137,7 @@ atexit.register(manage_postgres_service, action="stop")
 
 # --- ОСНОВНЫЕ СЦЕНАРИИ ---
 
-def analyze_scenario(url, db_pass, db_port, api_key=None, width=None, show_logs=True):
+def analyze_scenario(url, db_pass, db_port, api_key=None, width=None, show_logs=True, skip_db=False):
     """
     Выполняет полный цикл анализа сайта: сбор кода, поиск уязвимостей, 
     получение советов ИИ и сохранение результатов.
@@ -194,13 +194,16 @@ def analyze_scenario(url, db_pass, db_port, api_key=None, width=None, show_logs=
                 full_data = list(stats)
                 full_data[-1] = stored_data
                 
-                try:
-                    report_progress(90, "Сохранение результатов в БД...")
-                    handler = DB_handler(db_pass, db_port)
-                    handler.insert(tuple(full_data))
-                    log_status("Данные успешно сохранены в БД.")
-                except Exception as e:
-                    log_status(f"Ошибка БД при сохранении: {e}")
+                if not skip_db:
+                    try:
+                        report_progress(90, "Сохранение результатов в БД...")
+                        handler = DB_handler(db_pass, db_port)
+                        handler.insert(tuple(full_data))
+                        log_status("Данные успешно сохранены в БД.")
+                    except Exception as e:
+                        log_status(f"Ошибка БД при сохранении: {e}")
+                else:
+                    report_progress(90, "Сохранение в БД пропущено...")
                 
                 report_progress(100, "Анализ завершен!")
         except Exception as e:
@@ -228,6 +231,8 @@ def analyze_scenario(url, db_pass, db_port, api_key=None, width=None, show_logs=
         result_text += f"Всего строк (n): {n}\n\n"
         result_text += "--- Советы ---\n"
         result_text += recommendations if recommendations else "Рекомендаций от ИИ нет. Проверьте код вручную."
+        if skip_db:
+            result_text += "\n\n[!] Внимание: Результат не был записан в БД (база недоступна)."
 
         console.print(Panel(
             result_text,
@@ -328,6 +333,7 @@ if __name__ == "__main__":
     analyze_parser.add_argument("--width", type=int, help="Ширина вывода")
     analyze_parser.add_argument("--show-logs", action="store_true", help="Показывать системные уведомления")
     analyze_parser.add_argument("--progress", action="store_true", help="Выводить прогресс для whiptail")
+    analyze_parser.add_argument("--skip-db", action="store_true", help="Пропустить сохранение в БД")
 
     # Команда 'view'
     view_parser = subparsers.add_parser("view")
@@ -336,6 +342,11 @@ if __name__ == "__main__":
     view_parser.add_argument("--width", type=int, help="Ширина таблицы для вывода")
     view_parser.add_argument("--show-logs", action="store_true", help="Показывать системные уведомления")
     view_parser.add_argument("--progress", action="store_true", help="Выводить прогресс для whiptail")
+    
+    # Команда 'check-db'
+    check_db_parser = subparsers.add_parser("check-db")
+    check_db_parser.add_argument("--db-pass", required=True, help="Пароль от PostgreSQL")
+    check_db_parser.add_argument("--db-port", default=5432, type=int, help="Порт PostgreSQL")
 
     args = parser.parse_args()
 
@@ -344,8 +355,21 @@ if __name__ == "__main__":
             PROGRESS_ENABLED = True
             
         if args.command == "analyze":
-            analyze_scenario(args.url, args.db_pass, args.db_port, args.api_key, args.width, args.show_logs)
+            analyze_scenario(args.url, args.db_pass, args.db_port, args.api_key, args.width, args.show_logs, args.skip_db)
         elif args.command == "view":
             view_scenario(args.db_pass, args.db_port, args.width, args.show_logs)
+        elif args.command == "check-db":
+            from modules.db import DB_handler
+            manage_postgres_service("start")
+            try:
+                DB_handler._DB_handler__setup_database({
+                    "dbname": "JS_Code_Analyzer",
+                    "user": "postgres",
+                    "password": args.db_pass,
+                    "host": "localhost",
+                    "port": str(args.db_port)
+                })
+            except Exception:
+                sys.exit(1)
     else:
         parser.print_help()
